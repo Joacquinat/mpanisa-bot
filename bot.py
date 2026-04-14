@@ -1,7 +1,7 @@
 """
 Bot Telegram - Mpanisa Mpanatrika
-Vendredi 17:50 accueil – 19:30
-Dimanche 10:20 accueil – 12:00
+Vendredi 17:46 accueil – 19:30
+Dimanche 10:16 accueil – 12:00
 Fuseau horaire : Indian/Antananarivo (UTC+3) — Madagascar
 """
 
@@ -27,7 +27,6 @@ from telegram.ext import (
 TOKEN        = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_ICI")
 GROUP_ID     = int(os.environ.get("GROUP_ID", "0"))
 GROQ_KEY     = os.environ.get("GROQ_API_KEY", "")
-MINIAPP_URL  = os.environ.get("MINIAPP_URL", "")
 TIMEZONE     = pytz.timezone("Indian/Antananarivo")
 
 DATA_FILE     = "data.json"
@@ -37,8 +36,8 @@ MAX_COUNT     = 30
 SALLE_MAX     = 20
 
 SCHEDULE = {
-    4: (time(17, 45), time(19, 30)),  # Vendredi
-    6: (time(10, 15), time(12,  0)),  # Dimanche
+    4: (time(17, 46), time(19, 30)),  # Vendredi
+    6: (time(10, 16), time(12,  0)),  # Dimanche
 }
 
 DAY_MG = {4: "Zoma", 6: "Alahady"}
