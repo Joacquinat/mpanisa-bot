@@ -2,14 +2,14 @@ name: Run Mpanisa Bot
 
 on:
   schedule:
-    - cron: '30 14 * * 5'   # Vendredi 17h30 Madagascar (UTC+3)
-    - cron: '0 7 * * 0'     # Dimanche 10h00 Madagascar (UTC+3)
-  workflow_dispatch:         # ✅ Lancement manuel
+    - cron: '45 14 * * 5'
+    - cron: '15 7 * * 0'
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -20,4 +20,4 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GROUP_ID: ${{ secrets.GROUP_ID }}
+          GROUP_ID: ${{ secrets.GROUP_ID }} 
