@@ -1,0 +1,23 @@
+name: Run Mpanisa Bot
+
+on:
+  schedule:
+    - cron: '30 14 * * 5'   # Vendredi 17h30 Madagascar (UTC+3)
+    - cron: '0 7 * * 0'     # Dimanche 10h00 Madagascar (UTC+3)
+  workflow_dispatch:         # ✅ Lancement manuel
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - run: pip install -r requirements.txt
+      - run: python bot.py
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROUP_ID: ${{ secrets.GROUP_ID }}
