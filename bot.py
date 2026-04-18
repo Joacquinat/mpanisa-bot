@@ -265,13 +265,24 @@ async def job_scheduler(context):
         return
 
     accueil_t, end_t = sched
-    h, m = now.hour, now.minute
+    data    = load_data()
+    session = get_session(data)
 
-    if h == accueil_t.hour and m == accueil_t.minute:
-        await job_start_session(context)
+    now_time = now.time().replace(second=0, microsecond=0)
 
-    if h == end_t.hour and m == end_t.minute:
-        await job_end_session(context)
+    # Démarre si on est dans les 30 minutes après l'heure d'accueil
+    from datetime import timedelta, datetime as dt
+    accueil_dt = dt.combine(now.date(), accueil_t)
+    end_dt     = dt.combine(now.date(), end_t)
+    now_dt     = dt.combine(now.date(), now_time)
+
+    if accueil_dt <= now_dt <= accueil_dt + timedelta(minutes=30):
+        if not session["active"]:
+            await job_start_session(context)
+
+    if end_dt <= now_dt <= end_dt + timedelta(minutes=30):
+        if session["active"]:
+            await job_end_session(context)
 
 
 # ─── Commandes ────────────────────────────────────────────────────────────────
