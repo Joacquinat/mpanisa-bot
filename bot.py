@@ -258,6 +258,8 @@ async def job_end_session(context):
 # ─── Scheduler ────────────────────────────────────────────────────────────────
 
 async def job_scheduler(context):
+    from datetime import timedelta, datetime as dt
+    
     now   = datetime.now(TIMEZONE)
     sched = SCHEDULE.get(now.weekday())
     if not sched:
@@ -267,21 +269,21 @@ async def job_scheduler(context):
     data    = load_data()
     session = get_session(data)
 
-    now_time = now.time().replace(second=0, microsecond=0)
-
-    # Démarre si on est dans les 30 minutes après l'heure d'accueil
-    from datetime import timedelta, datetime as dt
+    now_dt     = dt.combine(now.date(), now.time().replace(second=0, microsecond=0))
     accueil_dt = dt.combine(now.date(), accueil_t)
     end_dt     = dt.combine(now.date(), end_t)
-    now_dt     = dt.combine(now.date(), now_time)
 
-    if accueil_dt <= now_dt <= accueil_dt + timedelta(minutes=30):
-        if not session["active"]:
+    # Démarre seulement si pas encore démarré aujourd'hui
+    if accueil_dt <= now_dt <= accueil_dt + timedelta(minutes=60):
+        if not session["active"] and not session.get("started_today"):
+            session["started_today"] = True
+            save_data(data)
             await job_start_session(context)
 
+    # Termine seulement si pas encore terminé aujourd'hui
     if end_dt <= now_dt <= end_dt + timedelta(minutes=30):
         if session["active"]:
-            await job_end_session(context)
+            await job_end_session(context) 
 
 
 # ─── Commandes ────────────────────────────────────────────────────────────────
