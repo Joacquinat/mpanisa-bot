@@ -2,22 +2,22 @@ name: Run Mpanisa Bot
 
 on:
   schedule:
-    - cron: '45 14 * * 5'  # Vendredi à 14:45 UTC
-    - cron: '15 7 * * 0'   # Dimanche à 07:15 UTC
+    - cron: '45 13 * * 5'  # Vendredi 16h45 Madagascar
+    - cron: '15 6 * * 0'   # Dimanche 09h15 Madagascar
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 110
+    timeout-minutes: 170
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # Mis à jour de v3 à v4
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5  # Mis à jour de v4 à v5
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Fixe la version à 3.11 pour éviter l'erreur de la 3.14
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -30,4 +30,3 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROUP_ID: ${{ secrets.GROUP_ID }}
- 
