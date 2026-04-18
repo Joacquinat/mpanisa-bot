@@ -36,6 +36,7 @@ SALLE_MAX     = 20
 
 SCHEDULE = {
     4: (time(17, 45), time(19, 30)),  # Vendredi
+    5: (time(7, 13), time(7, 30)),    # Samedi TEST
     6: (time(10, 15), time(12,  0)),  # Dimanche
 }
 
