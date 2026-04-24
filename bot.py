@@ -15,11 +15,12 @@ from datetime import datetime, time
 import pytz
 from groq import Groq
 
-from telegram import Update, Bot
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -29,6 +30,7 @@ from telegram.ext import (
 TOKEN        = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_ICI")
 GROUP_ID     = int(os.environ.get("GROUP_ID", "0"))
 GROQ_KEY     = os.environ.get("GROQ_API_KEY", "")
+ADMIN_ID     = int(os.environ.get("ADMIN_ID", "0"))
 TIMEZONE     = pytz.timezone("Indian/Antananarivo")
 
 DATA_FILE     = "data.json"
@@ -103,6 +105,9 @@ def get_session(data: dict) -> dict:
             "active": False,
             "total": 0,
             "participants": {},
+            "count_message_id": None,
+            "alert_message_id": None,
+            "alert_reporters": {},
         }
     return data["session"]
 
@@ -202,7 +207,7 @@ def build_progress_bar(total: int) -> str:
     return f"{bar} *{total}/{SALLE_MAX}* _({pct}%)_"
 
 def escape_md(text: str) -> str:
-    """Échappe les caractères spéciaux Markdown."""
+    """Échappe les caractères spéciaux MarkdownV2."""
     for ch in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
         text = text.replace(ch, '\\' + ch)
     return text
@@ -213,10 +218,19 @@ def build_list(participants: dict) -> str:
         for v in participants.values()
     )
 
+def build_alert_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📡 Tapaka ny Livestream", callback_data="live_coupe")]
+    ])
+
+def build_alert_text(reporters: dict) -> str:
+    names = ", ".join(f"*{escape_md(v['name'])}*" for v in reporters.values())
+    return f"🔴 Tapaka ny Livestream\\! \\({names}\\)\\. Miandrasa kely azafady\\."
+
 # ─── Jobs ─────────────────────────────────────────────────────────────────────
 
 async def job_start_session(context):
-    """Message d'accueil + bouton Mini App + ouverture du comptage."""
+    """Message d'accueil + bouton signalement + ouverture du comptage."""
     bot: Bot = context.bot
     data = load_data()
     session = get_session(data)
@@ -224,17 +238,21 @@ async def job_start_session(context):
     session["total"]            = 0
     session["participants"]     = {}
     session["count_message_id"] = None
+    session["alert_message_id"] = None
+    session["alert_reporters"]  = {}
     save_data(data)
 
     await bot.send_message(
         chat_id=GROUP_ID,
         text=(
             "🙏 *Salama daholo* 👋\n\n"
-            "Ankasitrahana raha alefa mialoha ny isa 😁"
+            "Ankasitrahana raha alefa mialoha ny isa 😁\n\n"
+            "_Raha sanatria tapaka ka tsy maheno dia tsindrio eto ambany\\._"
         ),
-        parse_mode="Markdown",
+        parse_mode="MarkdownV2",
+        reply_markup=build_alert_keyboard(),
     )
-    logger.info("Session démarrée — message d'accueil + Mini App envoyé.")
+    logger.info("Session démarrée — message d'accueil envoyé.")
 
 
 async def job_end_session(context):
@@ -258,6 +276,17 @@ async def job_end_session(context):
         except Exception:
             pass
     session["count_message_id"] = None
+
+    # Supprimer le message de signalement s'il existe encore
+    alert_id = session.get("alert_message_id")
+    if alert_id:
+        try:
+            await bot.delete_message(chat_id=GROUP_ID, message_id=alert_id)
+        except Exception:
+            pass
+    session["alert_message_id"] = None
+    session["alert_reporters"]  = {}
+
     save_data(data)
 
     if not participants:
@@ -360,6 +389,33 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _delete_cmd(update, context)
     except Exception as e:
         logger.error(f"cmd_reset error: {e}")
+        await _send(context, f"❌ Nisy olana: {e}")
+        await _delete_cmd(update, context)
+
+async def cmd_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin : /ok — réinitialise le signalement live coupé."""
+    if not await _check_admin(update, context):
+        return
+    try:
+        data    = load_data()
+        session = get_session(data)
+
+        # Supprimer le message de signalement
+        alert_id = session.get("alert_message_id")
+        if alert_id:
+            try:
+                await context.bot.delete_message(chat_id=GROUP_ID, message_id=alert_id)
+            except Exception:
+                pass
+
+        session["alert_message_id"] = None
+        session["alert_reporters"]  = {}
+        save_data(data)
+
+        await _delete_cmd(update, context)
+        logger.info("Signalement live réinitialisé par admin.")
+    except Exception as e:
+        logger.error(f"cmd_ok error: {e}")
         await _send(context, f"❌ Nisy olana: {e}")
         await _delete_cmd(update, context)
 
@@ -473,6 +529,67 @@ async def cmd_supprimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _delete_cmd(update, context)
 
 
+# ─── Callback bouton live coupé ───────────────────────────────────────────────
+
+async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()  # Ferme le spinner sur le bouton
+
+    user    = query.from_user
+    user_id = str(user.id)
+    name    = user.full_name or user.username or f"User{user.id}"
+
+    data    = load_data()
+    session = get_session(data)
+
+    if not session["active"]:
+        return
+
+    reporters = session.setdefault("alert_reporters", {})
+
+    # Ignorer si déjà signalé par ce membre
+    if user_id in reporters:
+        return
+
+    reporters[user_id] = {"name": name}
+    now      = datetime.now(TIMEZONE)
+    count    = len(reporters)
+    time_str = now.strftime("%Hh%M")
+
+    # Supprimer l'ancien message de signalement
+    alert_id = session.get("alert_message_id")
+    if alert_id:
+        try:
+            await context.bot.delete_message(chat_id=GROUP_ID, message_id=alert_id)
+        except Exception:
+            pass
+
+    # Envoyer nouveau message de signalement dans le groupe
+    sent = await context.bot.send_message(
+        chat_id=GROUP_ID,
+        text=build_alert_text(reporters),
+        parse_mode="MarkdownV2",
+    )
+    session["alert_message_id"] = sent.message_id
+    save_data(data)
+
+    # Envoyer message privé à l'admin
+    if ADMIN_ID:
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    f"⚠️ *Tapaka ny Livestream\\!*\n"
+                    f"Signalé par *{count}* membre{'s' if count > 1 else ''} — {time_str}"
+                ),
+                parse_mode="MarkdownV2",
+            )
+        except Exception as e:
+            logger.warning(f"Erreur envoi message privé admin: {e}")
+
+    logger.info(f"Live coupé signalé par {name} ({count} signalement(s)) — {time_str}")
+
+
 # ─── Handler messages ─────────────────────────────────────────────────────────
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -551,8 +668,11 @@ def main():
     app.add_handler(CommandHandler("debut",      cmd_debut,     filters=group_filter))
     app.add_handler(CommandHandler("fin",        cmd_fin,       filters=group_filter))
     app.add_handler(CommandHandler("reset",      cmd_reset,     filters=group_filter))
+    app.add_handler(CommandHandler("ok",         cmd_ok,        filters=group_filter))
     app.add_handler(CommandHandler("modifier",   cmd_modifier,  filters=group_filter))
     app.add_handler(CommandHandler("supprimer",  cmd_supprimer, filters=group_filter))
+
+    app.add_handler(CallbackQueryHandler(callback_live_coupe, pattern="^live_coupe$"))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter, handle_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter & filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
