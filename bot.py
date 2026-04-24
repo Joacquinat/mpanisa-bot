@@ -108,8 +108,6 @@ def get_session(data: dict) -> dict:
 
 # ─── Utilitaires ──────────────────────────────────────────────────────────────
 
-
-
 def parse_with_groq(text: str, old_sum: int) -> int | None:
     if not groq_client:
         return None
@@ -237,7 +235,6 @@ async def job_start_session(context):
         parse_mode="Markdown",
     )
     logger.info("Session démarrée — message d'accueil + Mini App envoyé.")
-
 
 
 async def job_end_session(context):
@@ -479,7 +476,7 @@ async def cmd_supprimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── Handler messages ─────────────────────────────────────────────────────────
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
+    message = update.message or update.edited_message
     if not message or not message.text:
         return
 
@@ -538,6 +535,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data(data)
 
 
+async def handle_edited_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gère les messages édités exactement comme les nouveaux messages."""
+    await handle_message(update, context)
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -553,6 +555,7 @@ def main():
     app.add_handler(CommandHandler("supprimer",  cmd_supprimer, filters=group_filter))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter & filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
 
     app.job_queue.run_repeating(job_scheduler, interval=60, first=3)
 
