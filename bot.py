@@ -113,6 +113,7 @@ def get_session(data: dict) -> dict:
             "count_message_id": None,
             "alert_message_id": None,
             "alert_reporters": {},
+            "button_message_id": None,
         }
     return data["session"]
 
@@ -216,14 +217,14 @@ def build_list(participants: dict) -> str:
 
 def build_alert_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📡 Tapaka ny Livestream", callback_data="live_coupe")]
+        [InlineKeyboardButton("📡 Tapaka ny fivoriana", callback_data="live_coupe")]
     ])
 
 def build_alert_text(reporters: dict) -> str:
     names = ", ".join(f"*{escape_md(v['name'])}*" for v in reporters.values())
     return (
         f"🔴 Tapaka ny Livestream\\! \\({names}\\)\\. "
-        f"Miandrasa kely azafady\\. _\\(L'admin a été notifié\\)_"
+        f"Miandrasa kely azafady\\. _\\(L'admin a été notifié par appel\\)_"
     )
 
 def call_callmebot():
@@ -239,7 +240,7 @@ def call_callmebot():
 # ─── Jobs ─────────────────────────────────────────────────────────────────────
 
 async def job_start_session(context):
-    """Message d'accueil + bouton signalement + ouverture du comptage."""
+    """Message d'accueil seul + message bouton séparé épinglé."""
     bot: Bot = context.bot
     data = load_data()
     session = get_session(data)
@@ -249,19 +250,47 @@ async def job_start_session(context):
     session["count_message_id"] = None
     session["alert_message_id"] = None
     session["alert_reporters"]  = {}
+    session["button_message_id"] = None
     save_data(data)
 
+    # 1. Message d'accueil seul
     await bot.send_message(
         chat_id=GROUP_ID,
         text=(
             "🙏 *Salama daholo* 👋\n\n"
-            "Ankasitrahana raha alefa mialoha ny isa 😁\n\n"
-            "_Raha sanatria tapaka ka tsy maheno dia tsindrio eto ambany\\._"
+            "Ankasitrahana raha alefa mialoha ny isa 😁"
         ),
+        parse_mode="Markdown",
+    )
+
+    # 2. Message séparé avec uniquement le bouton
+    button_msg = await bot.send_message(
+        chat_id=GROUP_ID,
+        text="_Raha sanatria tapaka ny fivoriana, tsindrio eto ambany\\._",
         parse_mode="MarkdownV2",
         reply_markup=build_alert_keyboard(),
     )
-    logger.info("Session démarrée — message d'accueil envoyé.")
+    session["button_message_id"] = button_msg.message_id
+
+    # 3. Épingler le message bouton sans notifier les membres
+    await bot.pin_chat_message(
+        chat_id=GROUP_ID,
+        message_id=button_msg.message_id,
+        disable_notification=True,
+    )
+
+    # 4. Supprimer la notification d'épinglage dans le chat
+    # Le message de service d'épinglage a un ID juste après le message épinglé
+    try:
+        await bot.delete_message(
+            chat_id=GROUP_ID,
+            message_id=button_msg.message_id + 1,
+        )
+    except Exception:
+        pass
+
+    save_data(data)
+    logger.info("Session démarrée — message d'accueil + bouton épinglé.")
 
 
 async def job_end_session(context):
@@ -286,7 +315,7 @@ async def job_end_session(context):
             pass
     session["count_message_id"] = None
 
-    # Supprimer le message de signalement s'il existe encore
+    # Supprimer le message de signalement
     alert_id = session.get("alert_message_id")
     if alert_id:
         try:
@@ -295,6 +324,19 @@ async def job_end_session(context):
             pass
     session["alert_message_id"] = None
     session["alert_reporters"]  = {}
+
+    # Dépingler et supprimer le message bouton
+    button_id = session.get("button_message_id")
+    if button_id:
+        try:
+            await bot.unpin_chat_message(chat_id=GROUP_ID, message_id=button_id)
+        except Exception:
+            pass
+        try:
+            await bot.delete_message(chat_id=GROUP_ID, message_id=button_id)
+        except Exception:
+            pass
+    session["button_message_id"] = None
 
     save_data(data)
 
@@ -338,12 +380,10 @@ async def job_scheduler(context):
 # ─── Commandes ────────────────────────────────────────────────────────────────
 
 async def _send(context, text, parse_mode="Markdown"):
-    """Toutes les réponses vont toujours dans le groupe cible."""
     await context.bot.send_message(chat_id=GROUP_ID, text=text, parse_mode=parse_mode)
 
 
 async def _delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Supprime le message de commande de l'admin."""
     try:
         await context.bot.delete_message(
             chat_id=update.effective_chat.id,
@@ -354,7 +394,6 @@ async def _delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _check_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Vérifie si l'utilisateur est admin du groupe cible, sans répondre si non."""
     try:
         member = await context.bot.get_chat_member(GROUP_ID, update.effective_user.id)
         if member.status not in ("administrator", "creator"):
@@ -409,7 +448,6 @@ async def cmd_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data    = load_data()
         session = get_session(data)
 
-        # Supprimer le message de signalement
         alert_id = session.get("alert_message_id")
         if alert_id:
             try:
@@ -417,7 +455,6 @@ async def cmd_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        # Réinitialiser complètement les reporters et le message
         session["alert_message_id"] = None
         session["alert_reporters"]  = {}
         save_data(data)
@@ -431,7 +468,6 @@ async def cmd_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_modifier(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin : /modifier @nom 5 ou /modifier nom 5"""
     if not await _check_admin(update, context):
         return
     try:
@@ -489,7 +525,6 @@ async def cmd_modifier(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_supprimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin : /supprimer @nom"""
     if not await _check_admin(update, context):
         return
     try:
@@ -549,18 +584,15 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = str(user.id)
     name    = user.full_name or user.username or f"User{user.id}"
 
-    # Toujours recharger depuis le fichier pour avoir l'état le plus récent
     data    = load_data()
     session = get_session(data)
 
     if not session["active"]:
         return
 
-    # Récupérer les reporters depuis le fichier (état frais après /ok)
     reporters = session.get("alert_reporters", {})
     session["alert_reporters"] = reporters
 
-    # Ignorer si déjà signalé par ce membre
     if user_id in reporters:
         return
 
@@ -569,7 +601,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     count    = len(reporters)
     time_str = now.strftime("%Hh%M")
 
-    # Supprimer l'ancien message de signalement
     alert_id = session.get("alert_message_id")
     if alert_id:
         try:
@@ -577,7 +608,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
 
-    # Envoyer nouveau message de signalement dans le groupe
     sent = await context.bot.send_message(
         chat_id=GROUP_ID,
         text=build_alert_text(reporters),
@@ -586,7 +616,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     session["alert_message_id"] = sent.message_id
     save_data(data)
 
-    # Envoyer message privé à l'admin
     if ADMIN_ID:
         try:
             await context.bot.send_message(
@@ -600,7 +629,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as e:
             logger.warning(f"Erreur envoi message privé admin: {e}")
 
-    # Appel CallMeBot dans un thread pour ne pas bloquer le bot
     threading.Thread(target=call_callmebot, daemon=True).start()
 
     logger.info(f"Live coupé signalé par {name} ({count} signalement(s)) — {time_str}")
@@ -667,7 +695,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_edited_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gère les messages édités exactement comme les nouveaux messages."""
     await handle_message(update, context)
 
 
