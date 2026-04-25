@@ -10,6 +10,8 @@ import json
 import os
 import re
 import threading
+import urllib.parse
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, time
 import pytz
@@ -27,11 +29,12 @@ from telegram.ext import (
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-TOKEN        = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_ICI")
-GROUP_ID     = int(os.environ.get("GROUP_ID", "0"))
-GROQ_KEY     = os.environ.get("GROQ_API_KEY", "")
-ADMIN_ID     = int(os.environ.get("ADMIN_ID", "0"))
-TIMEZONE     = pytz.timezone("Indian/Antananarivo")
+TOKEN              = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_ICI")
+GROUP_ID           = int(os.environ.get("GROUP_ID", "0"))
+GROQ_KEY           = os.environ.get("GROQ_API_KEY", "")
+ADMIN_ID           = int(os.environ.get("ADMIN_ID", "0"))
+CALLMEBOT_USER     = os.environ.get("CALLMEBOT_USER", "@nfj_06")
+TIMEZONE           = pytz.timezone("Indian/Antananarivo")
 
 DATA_FILE     = "data.json"
 MIN_COUNT     = 1
@@ -44,6 +47,8 @@ SCHEDULE = {
 }
 
 DAY_MG = {4: "Zoma", 6: "Alahady"}
+
+CALLMEBOT_MESSAGE = "Attention ! Des membres signalent que le livestream ne fonctionne plus."
 
 # ─── Mini serveur HTTP (pour Render) ──────────────────────────────────────────
 
@@ -225,7 +230,20 @@ def build_alert_keyboard() -> InlineKeyboardMarkup:
 
 def build_alert_text(reporters: dict) -> str:
     names = ", ".join(f"*{escape_md(v['name'])}*" for v in reporters.values())
-    return f"🔴 Tapaka ny Livestream\\! \\({names}\\)\\. Miandrasa kely azafady\\."
+    return (
+        f"🔴 Tapaka ny Livestream\\! \\({names}\\)\\. "
+        f"Miandrasa kely azafady\\. _\\(L'admin a été notifié\\)_"
+    )
+
+def call_callmebot():
+    """Déclenche un appel vocal via CallMeBot."""
+    try:
+        text_encoded = urllib.parse.quote(CALLMEBOT_MESSAGE)
+        url = f"https://api.callmebot.com/start.php?user={CALLMEBOT_USER}&text={text_encoded}&lang=fr-FR-Standard-A&rpt=2"
+        urllib.request.urlopen(url, timeout=10)
+        logger.info("Appel CallMeBot déclenché avec succès.")
+    except Exception as e:
+        logger.warning(f"CallMeBot error: {e}")
 
 # ─── Jobs ─────────────────────────────────────────────────────────────────────
 
@@ -586,6 +604,9 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         except Exception as e:
             logger.warning(f"Erreur envoi message privé admin: {e}")
+
+    # Appel CallMeBot (dans un thread pour ne pas bloquer le bot)
+    threading.Thread(target=call_callmebot, daemon=True).start()
 
     logger.info(f"Live coupé signalé par {name} ({count} signalement(s)) — {time_str}")
 
