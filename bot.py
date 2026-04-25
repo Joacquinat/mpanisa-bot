@@ -202,15 +202,6 @@ def format_date_mg(now: datetime) -> str:
     day_mg = DAY_MG.get(now.weekday(), "")
     return f"{now.day} {months_mg[now.month]} {now.year}  |  {day_mg}"
 
-def build_progress_bar(total: int) -> str:
-    ratio  = total / SALLE_MAX
-    filled = min(round(ratio * 10), 10)
-    empty  = 10 - filled
-    block  = "🟨" if ratio < 0.5 else ("🟧" if ratio < 0.75 else "🟥")
-    bar    = block * filled + "⬜" * empty
-    pct    = min(round(ratio * 100), 100)
-    return f"{bar} *{total}/{SALLE_MAX}* _({pct}%)_"
-
 def escape_md(text: str) -> str:
     """Échappe les caractères spéciaux MarkdownV2."""
     for ch in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
@@ -426,6 +417,7 @@ async def cmd_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
+        # Réinitialiser complètement les reporters et le message
         session["alert_message_id"] = None
         session["alert_reporters"]  = {}
         save_data(data)
@@ -551,19 +543,22 @@ async def cmd_supprimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()  # Ferme le spinner sur le bouton
+    await query.answer()
 
     user    = query.from_user
     user_id = str(user.id)
     name    = user.full_name or user.username or f"User{user.id}"
 
+    # Toujours recharger depuis le fichier pour avoir l'état le plus récent
     data    = load_data()
     session = get_session(data)
 
     if not session["active"]:
         return
 
-    reporters = session.setdefault("alert_reporters", {})
+    # Récupérer les reporters depuis le fichier (état frais après /ok)
+    reporters = session.get("alert_reporters", {})
+    session["alert_reporters"] = reporters
 
     # Ignorer si déjà signalé par ce membre
     if user_id in reporters:
@@ -605,7 +600,7 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as e:
             logger.warning(f"Erreur envoi message privé admin: {e}")
 
-    # Appel CallMeBot (dans un thread pour ne pas bloquer le bot)
+    # Appel CallMeBot dans un thread pour ne pas bloquer le bot
     threading.Thread(target=call_callmebot, daemon=True).start()
 
     logger.info(f"Live coupé signalé par {name} ({count} signalement(s)) — {time_str}")
@@ -661,13 +656,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bot = context.bot
     msg_id = session.get("count_message_id")
-    # Supprimer l'ancien message
     if msg_id:
         try:
             await bot.delete_message(chat_id=GROUP_ID, message_id=msg_id)
         except Exception:
             pass
-    # Envoyer un nouveau message (toujours le dernier)
     sent = await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="Markdown")
     session["count_message_id"] = sent.message_id
     save_data(data)
