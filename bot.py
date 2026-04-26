@@ -200,7 +200,6 @@ def format_date_mg(now: datetime) -> str:
         5:"Mey",6:"Jona",7:"Jolay",8:"Aogositra",
         9:"Septambra",10:"Oktobra",11:"Novambra",12:"Desambra",
     }
-    day_mg = DAY_MG.get(now.weekday(), "")
     return f"{now.day} {months_mg[now.month]} {now.year}"
 
 def escape_md(text: str) -> str:
@@ -224,7 +223,7 @@ def build_alert_text(reporters: dict) -> str:
     names = ", ".join(f"*{escape_md(v['name'])}*" for v in reporters.values())
     return (
         f"🔴 Tapaka ny Livestream\\! \\({names}\\)\\. "
-        f"Miandrasa kely azafady\\. _\\(L'admin a été notifié par appel\\)_"
+        f"Miandrasa kely azafady\\. _\\(Efa nampandrenesina ny admin\\)_"
     )
 
 def call_callmebot():
@@ -256,12 +255,14 @@ async def job_start_session(context):
     now      = datetime.now(TIMEZONE)
     date_str = format_date_mg(now)
 
-    # 1. Message d'accueil — ligne 1 et 3 normales, ligne 2 en quote
+    # 1. Message d'accueil avec séparateurs et quote sur la date
     await bot.send_message(
         chat_id=GROUP_ID,
         text=(
-            f"🙏 *Salama daholo* 👋\n\n"
-            f">Tongasoa amin'ny fivoriana androany — *{escape_md(date_str)}*\n\n"
+            f"🙏 *Salama daholo* 👋\n"
+            f"⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
+            f">Tongasoa amin'ny fivoriana androany — *{escape_md(date_str)}*\n"
+            f"⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
             f"Ankasitrahana raha alefa mialoha ny isa 😁"
         ),
         parse_mode="MarkdownV2",
@@ -684,8 +685,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total        = session["total"]
     participants = session["participants"]
+
+    # "Isa amin'izao" en quote, liste normale en dessous
     text = (
-        f"📊 *Isa amin'izao : {total}*\n\n"
+        f">📊 *Isa amin'izao : {total}*\n\n"
         f"{build_list(participants)}"
     )
 
@@ -696,7 +699,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await bot.delete_message(chat_id=GROUP_ID, message_id=msg_id)
         except Exception:
             pass
-    sent = await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="Markdown")
+    sent = await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
     session["count_message_id"] = sent.message_id
     save_data(data)
 
