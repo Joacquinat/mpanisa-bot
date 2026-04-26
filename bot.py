@@ -217,7 +217,7 @@ def build_list(participants: dict) -> str:
 
 def build_alert_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📡 Tapaka ny fivoriana", callback_data="live_coupe")]
+        [InlineKeyboardButton("🚨 Tapaka ny fivoriana", callback_data="live_coupe")]
     ])
 
 def build_alert_text(reporters: dict) -> str:
@@ -255,15 +255,14 @@ async def job_start_session(context):
 
     now      = datetime.now(TIMEZONE)
     date_str = format_date_mg(now)
-    day_mg   = DAY_MG.get(now.weekday(), "")
 
-    # 1. Message d'accueil avec date en style quote
+    # 1. Message d'accueil — ligne 1 et 3 normales, ligne 2 en quote
     await bot.send_message(
         chat_id=GROUP_ID,
         text=(
             f"🙏 *Salama daholo* 👋\n\n"
-            f">Tongasoa amin'ny fivoriana androany — *{escape_md(date_str)}*\n"
-            f">Ankasitrahana raha alefa mialoha ny isa 😁"
+            f">Tongasoa amin'ny fivoriana androany — *{escape_md(date_str)}*\n\n"
+            f"Ankasitrahana raha alefa mialoha ny isa 😁"
         ),
         parse_mode="MarkdownV2",
     )
@@ -347,20 +346,21 @@ async def job_end_session(context):
 
     if not participants:
         text = (
-            f"📅 *{date_str}*\n\n"
-            "📊 _Tsy nisy isa nandefa anio._\n\n"
-            "🙏 *Mankasitraka* !"
+            f"📅 *{escape_md(date_str)}*\n\n"
+            f"📊 _Tsy nisy isa nandefa anio\\._\n\n"
+            f">🙏 *Mankasitraka* \\!"
         )
+        await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
     else:
         text = (
-            f"🗓 *{date_str}*  |  *{day_mg}*\n\n"
+            f"🗓 *{escape_md(date_str)}*  \\|  *{escape_md(day_mg)}*\n\n"
             f"{build_list(participants)}\n\n"
             f"⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
             f"*Total  →  {total}*\n\n"
-            f"🙏 *Mankasitraka* tamin'ny nanatrehana ! ☺️"
+            f">🙏 *Mankasitraka* tamin'ny nanatrehana \\! ☺️"
         )
+        await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
 
-    await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="Markdown")
     logger.info(f"Session terminée — {total} mpanatrika | {date_str}")
 
 
