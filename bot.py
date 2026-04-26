@@ -244,12 +244,12 @@ async def job_start_session(context):
     bot: Bot = context.bot
     data = load_data()
     session = get_session(data)
-    session["active"]           = True
-    session["total"]            = 0
-    session["participants"]     = {}
-    session["count_message_id"] = None
-    session["alert_message_id"] = None
-    session["alert_reporters"]  = {}
+    session["active"]            = True
+    session["total"]             = 0
+    session["participants"]      = {}
+    session["count_message_id"]  = None
+    session["alert_message_id"]  = None
+    session["alert_reporters"]   = {}
     session["button_message_id"] = None
     save_data(data)
 
@@ -280,7 +280,6 @@ async def job_start_session(context):
     )
 
     # 4. Supprimer la notification d'épinglage dans le chat
-    # Le message de service d'épinglage a un ID juste après le message épinglé
     try:
         await bot.delete_message(
             chat_id=GROUP_ID,
@@ -593,6 +592,7 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     reporters = session.get("alert_reporters", {})
     session["alert_reporters"] = reporters
 
+    # Ignorer si déjà signalé par ce membre
     if user_id in reporters:
         return
 
@@ -601,6 +601,7 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     count    = len(reporters)
     time_str = now.strftime("%Hh%M")
 
+    # Supprimer l'ancien message de signalement
     alert_id = session.get("alert_message_id")
     if alert_id:
         try:
@@ -608,6 +609,7 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
 
+    # Envoyer nouveau message de signalement dans le groupe
     sent = await context.bot.send_message(
         chat_id=GROUP_ID,
         text=build_alert_text(reporters),
@@ -616,6 +618,7 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     session["alert_message_id"] = sent.message_id
     save_data(data)
 
+    # Envoyer message privé à l'admin
     if ADMIN_ID:
         try:
             await context.bot.send_message(
@@ -629,7 +632,9 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as e:
             logger.warning(f"Erreur envoi message privé admin: {e}")
 
-    threading.Thread(target=call_callmebot, daemon=True).start()
+    # Appel CallMeBot uniquement pour le premier signalement
+    if count == 1:
+        threading.Thread(target=call_callmebot, daemon=True).start()
 
     logger.info(f"Live coupé signalé par {name} ({count} signalement(s)) — {time_str}")
 
