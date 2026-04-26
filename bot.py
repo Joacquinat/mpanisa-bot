@@ -42,7 +42,7 @@ MAX_COUNT     = 30
 SALLE_MAX     = 20
 
 SCHEDULE = {
-    4: (time(16, 00), time(17, 45)),  # Vendredi
+    4: (time(17, 45), time(19, 30)),  # Vendredi
     6: (time(10, 15), time(12,  0)),  # Dimanche
 }
 
@@ -201,7 +201,7 @@ def format_date_mg(now: datetime) -> str:
         9:"Septambra",10:"Oktobra",11:"Novambra",12:"Desambra",
     }
     day_mg = DAY_MG.get(now.weekday(), "")
-    return f"{now.day} {months_mg[now.month]} {now.year}  |  {day_mg}"
+    return f"{now.day} {months_mg[now.month]} {now.year}"
 
 def escape_md(text: str) -> str:
     """Échappe les caractères spéciaux MarkdownV2."""
@@ -253,14 +253,19 @@ async def job_start_session(context):
     session["button_message_id"] = None
     save_data(data)
 
-    # 1. Message d'accueil seul
+    now      = datetime.now(TIMEZONE)
+    date_str = format_date_mg(now)
+    day_mg   = DAY_MG.get(now.weekday(), "")
+
+    # 1. Message d'accueil avec date en style quote
     await bot.send_message(
         chat_id=GROUP_ID,
         text=(
-            "🙏 *Salama daholo* 👋\n\n"
-            "Ankasitrahana raha alefa mialoha ny isa 😁"
+            f"🙏 *Salama daholo* 👋\n\n"
+            f">Tongasoa amin'ny fivoriana androany — *{escape_md(date_str)}*\n"
+            f">Ankasitrahana raha alefa mialoha ny isa 😁"
         ),
-        parse_mode="Markdown",
+        parse_mode="MarkdownV2",
     )
 
     # 2. Message séparé avec uniquement le bouton
@@ -304,6 +309,7 @@ async def job_end_session(context):
     participants = session["participants"]
     now          = datetime.now(TIMEZONE)
     date_str     = format_date_mg(now)
+    day_mg       = DAY_MG.get(now.weekday(), "")
 
     # Supprimer le message de comptage
     msg_id = session.get("count_message_id")
@@ -347,7 +353,7 @@ async def job_end_session(context):
         )
     else:
         text = (
-            f"🗓 *{date_str}*\n\n"
+            f"🗓 *{date_str}*  |  *{day_mg}*\n\n"
             f"{build_list(participants)}\n\n"
             f"⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
             f"*Total  →  {total}*\n\n"
@@ -592,7 +598,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     reporters = session.get("alert_reporters", {})
     session["alert_reporters"] = reporters
 
-    # Ignorer si déjà signalé par ce membre
     if user_id in reporters:
         return
 
@@ -601,7 +606,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     count    = len(reporters)
     time_str = now.strftime("%Hh%M")
 
-    # Supprimer l'ancien message de signalement
     alert_id = session.get("alert_message_id")
     if alert_id:
         try:
@@ -609,7 +613,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
 
-    # Envoyer nouveau message de signalement dans le groupe
     sent = await context.bot.send_message(
         chat_id=GROUP_ID,
         text=build_alert_text(reporters),
@@ -618,7 +621,6 @@ async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE
     session["alert_message_id"] = sent.message_id
     save_data(data)
 
-    # Envoyer message privé à l'admin
     if ADMIN_ID:
         try:
             await context.bot.send_message(
