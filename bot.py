@@ -42,7 +42,7 @@ MAX_COUNT     = 30
 SALLE_MAX     = 20
 
 SCHEDULE = {
-    4: (time(16, 00), time(17, 45)),  # Vendredi
+    4: (time(17, 45), time(19, 30)),  # Vendredi
     6: (time(10, 15), time(12,  0)),  # Dimanche
 }
 
@@ -584,15 +584,7 @@ async def cmd_supprimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-
-    # ── Popup de confirmation (Option D) ──────────────────────────────────────
-    # L'utilisateur voit la popup et doit appuyer OK pour confirmer.
-    # S'il ferme la popup (croix ou tap en dehors) → rien ne se passe.
-    await query.answer(
-        text="Tapaka ny fivoriana, hampandre ny admin.\n\nAppuyez sur OK pour confirmer.",
-        show_alert=True,
-    )
-    # ─────────────────────────────────────────────────────────────────────────
+    await query.answer()
 
     user    = query.from_user
     user_id = str(user.id)
