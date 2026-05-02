@@ -584,7 +584,15 @@ async def cmd_supprimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+
+    # ── Popup de confirmation (Option D) ──────────────────────────────────────
+    # L'utilisateur voit la popup et doit appuyer OK pour confirmer.
+    # S'il ferme la popup (croix ou tap en dehors) → rien ne se passe.
+    await query.answer(
+        text="Tapaka ny fivoriana, hampandre ny admin.\n\nAppuyez sur OK pour confirmer.",
+        show_alert=True,
+    )
+    # ─────────────────────────────────────────────────────────────────────────
 
     user    = query.from_user
     user_id = str(user.id)
