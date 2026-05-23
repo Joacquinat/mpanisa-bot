@@ -12,7 +12,6 @@ import re
 import threading
 import urllib.parse
 import urllib.request
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, time
 import pytz
 from groq import Groq
@@ -49,30 +48,6 @@ SCHEDULE = {
 DAY_MG = {4: "Zoma", 6: "Alahady"}
 
 CALLMEBOT_MESSAGE = "Attention ! Des membres signalent que le livestream ne fonctionne plus."
-
-# ─── Mini serveur HTTP (pour Render) ──────────────────────────────────────────
-
-class PingHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-    def do_HEAD(self):
-        self.send_response(200)
-        self.end_headers()
-    def do_POST(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-    def log_message(self, format, *args):
-        pass
-
-def run_http_server():
-    port = int(os.environ.get("PORT", 8000))
-    server = HTTPServer(("0.0.0.0", port), PingHandler)
-    server.serve_forever()
-
-threading.Thread(target=run_http_server, daemon=True).start()
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -363,6 +338,10 @@ async def job_end_session(context):
         await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
 
     logger.info(f"Session terminée — {total} mpanatrika | {date_str}")
+
+    # ── Arrêt automatique après fin de session ────────────────────────────────
+    logger.info("Arrêt du bot après fin de session.")
+    context.application.stop_running()
 
 
 # ─── Scheduler ────────────────────────────────────────────────────────────────
@@ -686,7 +665,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total        = session["total"]
     participants = session["participants"]
 
-    # "Isa amin'izao" en quote, liste normale en dessous
     text = (
         f">📊 *Isa amin'izao : {total}*\n\n"
         f"{build_list(participants)}"
