@@ -1,32 +1,31 @@
-name: Run Mpanisa Bot
+name: Mpanisa Bot
 
 on:
-  schedule:
-    - cron: '45 13 * * 5'  # Vendredi 16h45 Madagascar
-    - cron: '15 6 * * 0'   # Dimanche 09h15 Madagascar
-  workflow_dispatch:
+  workflow_dispatch:  # Déclenché par cron-job.org via l'API GitHub
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 170
+    timeout-minutes: 115  # Max 1h55 — s'arrête automatiquement si problème
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run bot
-        run: python bot.py
+        timeout-minutes: 110
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROUP_ID: ${{ secrets.GROUP_ID }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          CALLMEBOT_USER: ${{ secrets.CALLMEBOT_USER }}
+        run: python bot.py
