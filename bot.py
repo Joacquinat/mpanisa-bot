@@ -346,6 +346,29 @@ async def job_end_session(context):
 
 # ─── Scheduler ────────────────────────────────────────────────────────────────
 
+async def job_startup_check(context):
+    """Au démarrage : lance la session si on est dans la plage horaire."""
+    now   = datetime.now(TIMEZONE)
+    sched = SCHEDULE.get(now.weekday())
+    if not sched:
+        logger.info("Démarrage hors jour de session — bot en attente.")
+        return
+
+    accueil_t, end_t = sched
+    now_time = now.time().replace(second=0, microsecond=0)
+
+    if accueil_t <= now_time < end_t:
+        data = load_data()
+        session = get_session(data)
+        if not session["active"]:
+            logger.info("Démarrage dans la plage horaire — lancement automatique de la session.")
+            await job_start_session(context)
+        else:
+            logger.info("Session déjà active au démarrage.")
+    else:
+        logger.info(f"Démarrage hors plage horaire ({now_time}) — bot en attente.")
+
+
 async def job_scheduler(context):
     now   = datetime.now(TIMEZONE)
     sched = SCHEDULE.get(now.weekday())
@@ -706,7 +729,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter, handle_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter & filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
 
-    app.job_queue.run_repeating(job_scheduler, interval=60, first=3)
+    app.job_queue.run_once(job_startup_check, when=5)
+    app.job_queue.run_repeating(job_scheduler, interval=60, first=65)
 
     logger.info("Bot en ligne ✅")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
