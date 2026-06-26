@@ -230,8 +230,8 @@ async def job_start_session(context):
     now      = datetime.now(TIMEZONE)
     date_str = format_date_mg(now)
 
-    # 1. Message d'accueil avec séparateurs et quote sur la date
-    await bot.send_message(
+    # 1. Message d'accueil + bouton fusionnés
+    button_msg = await bot.send_message(
         chat_id=GROUP_ID,
         text=(
             f"🙏 *Salama daholo* 👋\n"
@@ -241,12 +241,6 @@ async def job_start_session(context):
             f"Ankasitrahana raha alefa mialoha ny isa 😁"
         ),
         parse_mode="MarkdownV2",
-    )
-
-    # 2. Message séparé avec uniquement le bouton
-    button_msg = await bot.send_message(
-        chat_id=GROUP_ID,
-        text="\u200b",
         reply_markup=build_alert_keyboard(),
     )
     session["button_message_id"] = button_msg.message_id
