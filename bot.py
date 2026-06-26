@@ -198,8 +198,8 @@ def build_alert_keyboard() -> InlineKeyboardMarkup:
 def build_alert_text(reporters: dict) -> str:
     names = ", ".join(f"*{escape_md(v['name'])}*" for v in reporters.values())
     return (
-        f"🔴 Tapaka ny Livestream\\! \\({names}\\)\\. "
-        f"Miandrasa kely azafady\\. _\\(Efa nampandrenesina ny admin\\)_"
+        f"🔴 Tapaka ny fivoriana \\({names}\\)\\. "
+        f"Miandrasa kely azafady 🙏\\."
     )
 
 def call_callmebot():
