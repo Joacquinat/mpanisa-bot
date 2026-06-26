@@ -89,6 +89,7 @@ def get_session(data: dict) -> dict:
             "alert_message_id": None,
             "alert_reporters": {},
             "button_message_id": None,
+            "welcome_message_id": None,
         }
     return data["session"]
 
@@ -230,8 +231,8 @@ async def job_start_session(context):
     now      = datetime.now(TIMEZONE)
     date_str = format_date_mg(now)
 
-    # 1. Message d'accueil (conservé en fin de session)
-    await bot.send_message(
+    # 1. Message d'accueil + bouton (épinglé, seulement dépinglé en fin de session)
+    button_msg = await bot.send_message(
         chat_id=GROUP_ID,
         text=(
             f"🙏 *Salama daholo* 👋\n"
@@ -241,15 +242,10 @@ async def job_start_session(context):
             f"Ankasitrahana raha alefa mialoha ny isa 😁"
         ),
         parse_mode="MarkdownV2",
-    )
-
-    # 2. Message bouton séparé (épinglé, supprimé en fin de session)
-    button_msg = await bot.send_message(
-        chat_id=GROUP_ID,
-        text="⠀",
         reply_markup=build_alert_keyboard(),
     )
     session["button_message_id"] = button_msg.message_id
+    session["welcome_message_id"] = button_msg.message_id
 
     # 3. Épingler le message bouton sans notifier les membres
     await bot.pin_chat_message(
@@ -304,7 +300,7 @@ async def job_end_session(context):
     session["alert_message_id"] = None
     session["alert_reporters"]  = {}
 
-    # Dépingler et supprimer le message bouton
+    # Dépingler et retirer le bouton du message de bienvenue
     button_id = session.get("button_message_id")
     if button_id:
         try:
@@ -312,10 +308,15 @@ async def job_end_session(context):
         except Exception:
             pass
         try:
-            await bot.delete_message(chat_id=GROUP_ID, message_id=button_id)
+            await bot.edit_message_reply_markup(
+                chat_id=GROUP_ID,
+                message_id=button_id,
+                reply_markup=None,
+            )
         except Exception:
             pass
     session["button_message_id"] = None
+    session["welcome_message_id"] = None
 
     save_data(data)
 
