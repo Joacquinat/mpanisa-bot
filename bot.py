@@ -246,8 +246,7 @@ async def job_start_session(context):
     # 2. Message séparé avec uniquement le bouton
     button_msg = await bot.send_message(
         chat_id=GROUP_ID,
-        text="_Raha sanatria tapaka ny fivoriana, tsindrio eto ambany\\._",
-        parse_mode="MarkdownV2",
+        text="\u200b",
         reply_markup=build_alert_keyboard(),
     )
     session["button_message_id"] = button_msg.message_id
