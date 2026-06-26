@@ -474,113 +474,6 @@ async def cmd_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _delete_cmd(update, context)
 
 
-async def cmd_modifier(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await _check_admin(update, context):
-        return
-    try:
-        args = context.args
-        if len(args) < 2:
-            await _send(context, "❌ Fampiasana : /modifier nom 5")
-            await _delete_cmd(update, context)
-            return
-
-        new_number = int(args[-1])
-        search = " ".join(args[:-1]).lstrip("@").lower()
-
-        data    = load_data()
-        session = get_session(data)
-
-        if not session["active"]:
-            await _send(context, "❌ Tsy misy session mavitrika.")
-            await _delete_cmd(update, context)
-            return
-
-        participants = session["participants"]
-        found_id = None
-
-        if search.isdigit():
-            idx = int(search) - 1
-            keys = list(participants.keys())
-            if 0 <= idx < len(keys):
-                found_id = keys[idx]
-        else:
-            for uid, v in participants.items():
-                if search in v["name"].lower():
-                    found_id = uid
-                    break
-
-        if not found_id:
-            await _send(context, f"❌ Tsy hita : *{search}*")
-            await _delete_cmd(update, context)
-            return
-
-        old_number = session["participants"][found_id]["sum"]
-        session["participants"][found_id]["sum"] = new_number
-        session["total"] = sum(v["sum"] for v in session["participants"].values())
-        save_data(data)
-
-        await _send(context,
-            f"✅ *{session['participants'][found_id]['name']}* : {old_number} ➜ *{new_number}*",
-        )
-        await _delete_cmd(update, context)
-    except ValueError:
-        await _send(context, "❌ Ny isa dia tsy mety.")
-        await _delete_cmd(update, context)
-    except Exception as e:
-        await _send(context, f"❌ Nisy olana: {e}")
-        await _delete_cmd(update, context)
-
-
-async def cmd_supprimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await _check_admin(update, context):
-        return
-    try:
-        if not context.args:
-            await _send(context, "❌ Fampiasana : /supprimer nom")
-            await _delete_cmd(update, context)
-            return
-
-        search = " ".join(context.args).lstrip("@").lower()
-
-        data    = load_data()
-        session = get_session(data)
-
-        if not session["active"]:
-            await _send(context, "❌ Tsy misy session mavitrika.")
-            await _delete_cmd(update, context)
-            return
-
-        participants = session["participants"]
-        found_id = None
-
-        if search.isdigit():
-            idx = int(search) - 1
-            keys = list(participants.keys())
-            if 0 <= idx < len(keys):
-                found_id = keys[idx]
-        else:
-            for uid, v in participants.items():
-                if search in v["name"].lower():
-                    found_id = uid
-                    break
-
-        if not found_id:
-            await _send(context, f"❌ Tsy hita : *{search}*")
-            await _delete_cmd(update, context)
-            return
-
-        name = session["participants"][found_id]["name"]
-        del session["participants"][found_id]
-        session["total"] = sum(v["sum"] for v in session["participants"].values())
-        save_data(data)
-
-        await _send(context, f"🗑️ *{name}* nesorina.")
-        await _delete_cmd(update, context)
-    except Exception as e:
-        await _send(context, f"❌ Nisy olana: {e}")
-        await _delete_cmd(update, context)
-
-
 # ─── Callback bouton live coupé ───────────────────────────────────────────────
 
 async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -705,6 +598,48 @@ async def handle_edited_message(update: Update, context: ContextTypes.DEFAULT_TY
     await handle_message(update, context)
 
 
+async def cmd_total(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _check_admin(update, context):
+        return
+    try:
+        if not context.args or not context.args[0].isdigit():
+            await _send(context, "❌ Fampiasana : /total 25")
+            await _delete_cmd(update, context)
+            return
+
+        new_total = int(context.args[0])
+        data    = load_data()
+        session = get_session(data)
+
+        if not session["active"]:
+            await _send(context, "❌ Tsy misy session mavitrika.")
+            await _delete_cmd(update, context)
+            return
+
+        session["total"] = new_total
+        save_data(data)
+
+        bot = context.bot
+        msg_id = session.get("count_message_id")
+        if msg_id:
+            try:
+                await bot.delete_message(chat_id=GROUP_ID, message_id=msg_id)
+            except Exception:
+                pass
+        sent = await bot.send_message(
+            chat_id=GROUP_ID,
+            text=f">📊 *Isa amin'izao : {new_total}*",
+            parse_mode="MarkdownV2",
+        )
+        session["count_message_id"] = sent.message_id
+        save_data(data)
+        await _delete_cmd(update, context)
+    except Exception as e:
+        await _send(context, f"❌ Nisy olana: {e}")
+        await _delete_cmd(update, context)
+
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -717,8 +652,7 @@ def main():
     app.add_handler(CommandHandler("fin",        cmd_fin,       filters=group_filter))
     app.add_handler(CommandHandler("reset",      cmd_reset,     filters=group_filter))
     app.add_handler(CommandHandler("ok",         cmd_ok,        filters=group_filter))
-    app.add_handler(CommandHandler("modifier",   cmd_modifier,  filters=group_filter))
-    app.add_handler(CommandHandler("supprimer",  cmd_supprimer, filters=group_filter))
+    app.add_handler(CommandHandler("total",      cmd_total,     filters=group_filter))
 
     app.add_handler(CallbackQueryHandler(callback_live_coupe, pattern="^live_coupe$"))
 
