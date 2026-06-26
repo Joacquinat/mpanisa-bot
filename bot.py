@@ -330,7 +330,6 @@ async def job_end_session(context):
     else:
         text = (
             f"🗓 *{escape_md(date_str)}*  \\|  *{escape_md(day_mg)}*\n\n"
-            f"{build_list(participants)}\n\n"
             f"⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
             f"*Total  →  {total}*\n\n"
             f">🙏 *Mankasitraka* tamin'ny nanatrehana \\! ☺️"
@@ -688,10 +687,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total        = session["total"]
     participants = session["participants"]
 
-    text = (
-        f">📊 *Isa amin'izao : {total}*\n\n"
-        f"{build_list(participants)}"
-    )
+    text = f">📊 *Isa amin'izao : {total}*"
 
     bot = context.bot
     msg_id = session.get("count_message_id")
