@@ -26,6 +26,7 @@ from telegram.ext import (
 
 TOKEN    = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_ICI")
 GROUP_ID = int(os.environ.get("GROUP_ID", "0"))
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
 TIMEZONE = pytz.timezone("Indian/Antananarivo")
 
@@ -458,6 +459,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data(data)
 
 
+# ─── Commande message manuel ──────────────────────────────────────────────────
+
+async def cmd_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin : /msg Texte — envoie un message personnalisé dans le groupe via DM."""
+    if update.effective_chat.id != ADMIN_ID:
+        return
+    if not context.args:
+        await update.message.reply_text("❌ Fampiasana : /msg Texte...")
+        return
+    texte = " ".join(context.args)
+    await context.bot.send_message(chat_id=GROUP_ID, text=texte)
+    await update.message.reply_text("✅ Voafaritra.")
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -466,6 +481,7 @@ def main():
 
     group_filter = filters.Chat(GROUP_ID)
 
+    app.add_handler(CommandHandler("msg",   cmd_msg))  # DM uniquement, pas de group_filter
     app.add_handler(CommandHandler("debut", cmd_debut, filters=group_filter))
     app.add_handler(CommandHandler("fin",   cmd_fin,   filters=group_filter))
     app.add_handler(CommandHandler("reset", cmd_reset, filters=group_filter))
