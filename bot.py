@@ -9,36 +9,29 @@ import logging
 import json
 import os
 import re
-import threading
-import urllib.parse
-import urllib.request
 from datetime import datetime, time
 import pytz
 from groq import Groq
 
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Bot
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-TOKEN              = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_ICI")
-GROUP_ID           = int(os.environ.get("GROUP_ID", "0"))
-GROQ_KEY           = os.environ.get("GROQ_API_KEY", "")
-ADMIN_ID           = int(os.environ.get("ADMIN_ID", "0"))
-CALLMEBOT_USER     = os.environ.get("CALLMEBOT_USER", "@nfj_06")
-TIMEZONE           = pytz.timezone("Indian/Antananarivo")
+TOKEN    = os.environ.get("BOT_TOKEN", "VOTRE_TOKEN_ICI")
+GROUP_ID = int(os.environ.get("GROUP_ID", "0"))
+GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
+TIMEZONE = pytz.timezone("Indian/Antananarivo")
 
-DATA_FILE     = "data.json"
-MIN_COUNT     = 1
-MAX_COUNT     = 30
-SALLE_MAX     = 20
+DATA_FILE = "data.json"
+MIN_COUNT = 1
+MAX_COUNT = 30
 
 SCHEDULE = {
     4: (time(17, 45), time(19, 30)),  # Vendredi
@@ -46,8 +39,6 @@ SCHEDULE = {
 }
 
 DAY_MG = {4: "Zoma", 6: "Alahady"}
-
-CALLMEBOT_MESSAGE = "Attention ! Des membres signalent que le livestream ne fonctionne plus."
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -86,9 +77,6 @@ def get_session(data: dict) -> dict:
             "total": 0,
             "participants": {},
             "count_message_id": None,
-            "alert_message_id": None,
-            "alert_reporters": {},
-            "button_message_id": None,
             "welcome_message_id": None,
         }
     return data["session"]
@@ -142,18 +130,19 @@ def extract_number(text: str, old_sum: int = 0) -> int | None:
     if result is not None:
         return result
 
+    # ── Fallback regex ────────────────────────────────────────────────────────
     text_clean = text.replace(",", ".").strip().lower()
     text_clean = re.sub(r"\bzay\b", "", text_clean).strip()
 
-    plus_match = re.search(r"(?<!\d)\+\s*(\d+)", text_clean)
+    plus_match = re.search(r"\+\s*(\d+)", text_clean)
     if plus_match:
         return old_sum + int(plus_match.group(1))
 
-    minus_match = re.search(r"(?<!\d)-\s*(\d+)", text_clean)
+    minus_match = re.search(r"-\s*(\d+)", text_clean)
     if minus_match:
         return max(0, old_sum - int(minus_match.group(1)))
 
-    match = re.search(r"\b(\d+)\b", text_clean)
+    match = re.search(r"(\d+)", text_clean)
     if not match:
         return None
     n = int(match.group(1))
@@ -172,67 +161,34 @@ def extract_number(text: str, old_sum: int = 0) -> int | None:
 
 def format_date_mg(now: datetime) -> str:
     months_mg = {
-        1:"Janoary",2:"Febroary",3:"Martsa",4:"Aprily",
-        5:"Mey",6:"Jona",7:"Jolay",8:"Aogositra",
+        1:"Janoary", 2:"Febroary", 3:"Martsa",  4:"Aprily",
+        5:"Mey",     6:"Jona",     7:"Jolay",    8:"Aogositra",
         9:"Septambra",10:"Oktobra",11:"Novambra",12:"Desambra",
     }
     return f"{now.day} {months_mg[now.month]} {now.year}"
 
 def escape_md(text: str) -> str:
-    """Échappe les caractères spéciaux MarkdownV2."""
-    for ch in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+    for ch in ['_','*','[',']','(',')',  '~','`','>','#','+','-','=','|','{','}','.','!']:
         text = text.replace(ch, '\\' + ch)
     return text
-
-def build_list(participants: dict) -> str:
-    return "\n".join(
-        f"▸ *{escape_md(v['name'])}*    {v['sum']}"
-        for v in participants.values()
-    )
-
-def build_alert_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚨 Tapaka ny fivoriana", callback_data="live_coupe")]
-    ])
-
-def build_alert_text(reporters: dict) -> str:
-    names = ", ".join(f"*{escape_md(v['name'])}*" for v in reporters.values())
-    return (
-        f"🔴 Tapaka ny fivoriana \\({names}\\)\\. "
-        f"Miandrasa kely azafady 🙏\\."
-    )
-
-def call_callmebot():
-    """Déclenche un appel vocal via CallMeBot."""
-    try:
-        text_encoded = urllib.parse.quote(CALLMEBOT_MESSAGE)
-        url = f"https://api.callmebot.com/start.php?user={CALLMEBOT_USER}&text={text_encoded}&lang=fr-FR-Standard-A&rpt=2"
-        urllib.request.urlopen(url, timeout=10)
-        logger.info("Appel CallMeBot déclenché avec succès.")
-    except Exception as e:
-        logger.warning(f"CallMeBot error: {e}")
 
 # ─── Jobs ─────────────────────────────────────────────────────────────────────
 
 async def job_start_session(context):
-    """Message d'accueil seul + message bouton séparé épinglé."""
     bot: Bot = context.bot
     data = load_data()
     session = get_session(data)
-    session["active"]            = True
-    session["total"]             = 0
-    session["participants"]      = {}
-    session["count_message_id"]  = None
-    session["alert_message_id"]  = None
-    session["alert_reporters"]   = {}
-    session["button_message_id"] = None
+    session["active"]             = True
+    session["total"]              = 0
+    session["participants"]       = {}
+    session["count_message_id"]   = None
+    session["welcome_message_id"] = None
     save_data(data)
 
     now      = datetime.now(TIMEZONE)
     date_str = format_date_mg(now)
 
-    # 1. Message d'accueil + bouton (épinglé, seulement dépinglé en fin de session)
-    button_msg = await bot.send_message(
+    welcome_msg = await bot.send_message(
         chat_id=GROUP_ID,
         text=(
             f"🙏 *Salama daholo* 👋\n"
@@ -242,29 +198,24 @@ async def job_start_session(context):
             f"Ankasitrahana raha alefa mialoha ny isa 😁"
         ),
         parse_mode="MarkdownV2",
-        reply_markup=build_alert_keyboard(),
     )
-    session["button_message_id"] = button_msg.message_id
-    session["welcome_message_id"] = button_msg.message_id
+    session["welcome_message_id"] = welcome_msg.message_id
 
-    # 3. Épingler le message bouton sans notifier les membres
     await bot.pin_chat_message(
         chat_id=GROUP_ID,
-        message_id=button_msg.message_id,
+        message_id=welcome_msg.message_id,
         disable_notification=True,
     )
-
-    # 4. Supprimer la notification d'épinglage dans le chat
     try:
         await bot.delete_message(
             chat_id=GROUP_ID,
-            message_id=button_msg.message_id + 1,
+            message_id=welcome_msg.message_id + 1,
         )
     except Exception:
         pass
 
     save_data(data)
-    logger.info("Session démarrée — message d'accueil + bouton épinglé.")
+    logger.info("Session démarrée.")
 
 
 async def job_end_session(context):
@@ -290,32 +241,13 @@ async def job_end_session(context):
             pass
     session["count_message_id"] = None
 
-    # Supprimer le message de signalement
-    alert_id = session.get("alert_message_id")
-    if alert_id:
+    # Dépingler le message d'accueil
+    welcome_id = session.get("welcome_message_id")
+    if welcome_id:
         try:
-            await bot.delete_message(chat_id=GROUP_ID, message_id=alert_id)
+            await bot.unpin_chat_message(chat_id=GROUP_ID, message_id=welcome_id)
         except Exception:
             pass
-    session["alert_message_id"] = None
-    session["alert_reporters"]  = {}
-
-    # Dépingler et retirer le bouton du message de bienvenue
-    button_id = session.get("button_message_id")
-    if button_id:
-        try:
-            await bot.unpin_chat_message(chat_id=GROUP_ID, message_id=button_id)
-        except Exception:
-            pass
-        try:
-            await bot.edit_message_reply_markup(
-                chat_id=GROUP_ID,
-                message_id=button_id,
-                reply_markup=None,
-            )
-        except Exception:
-            pass
-    session["button_message_id"] = None
     session["welcome_message_id"] = None
 
     save_data(data)
@@ -326,7 +258,6 @@ async def job_end_session(context):
             f"📊 _Tsy nisy isa nandefa anio\\._\n\n"
             f">🙏 *Mankasitraka* \\!"
         )
-        await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
     else:
         text = (
             f"🗓 *{escape_md(date_str)}*  \\|  *{escape_md(day_mg)}*\n\n"
@@ -334,23 +265,19 @@ async def job_end_session(context):
             f"*Total  →  {total}*\n\n"
             f">🙏 *Mankasitraka* tamin'ny nanatrehana \\! ☺️"
         )
-        await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
+    await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
 
     logger.info(f"Session terminée — {total} mpanatrika | {date_str}")
-
-    # ── Arrêt automatique après fin de session ────────────────────────────────
-    logger.info("Arrêt du bot après fin de session.")
     context.application.stop_running()
 
 
 # ─── Scheduler ────────────────────────────────────────────────────────────────
 
 async def job_startup_check(context):
-    """Au démarrage : lance la session si on est dans la plage horaire."""
     now   = datetime.now(TIMEZONE)
     sched = SCHEDULE.get(now.weekday())
     if not sched:
-        logger.info("Démarrage hors jour de session — bot en attente.")
+        logger.info("Démarrage hors jour de session.")
         return
 
     accueil_t, end_t = sched
@@ -360,12 +287,12 @@ async def job_startup_check(context):
         data = load_data()
         session = get_session(data)
         if not session["active"]:
-            logger.info("Démarrage dans la plage horaire — lancement automatique de la session.")
+            logger.info("Lancement automatique de la session.")
             await job_start_session(context)
         else:
             logger.info("Session déjà active au démarrage.")
     else:
-        logger.info(f"Démarrage hors plage horaire ({now_time}) — bot en attente.")
+        logger.info(f"Hors plage horaire ({now_time}).")
 
 
 async def job_scheduler(context):
@@ -379,7 +306,6 @@ async def job_scheduler(context):
 
     if h == accueil_t.hour and m == accueil_t.minute:
         await job_start_session(context)
-
     if h == end_t.hour and m == end_t.minute:
         await job_end_session(context)
 
@@ -388,7 +314,6 @@ async def job_scheduler(context):
 
 async def _send(context, text, parse_mode="Markdown"):
     await context.bot.send_message(chat_id=GROUP_ID, text=text, parse_mode=parse_mode)
-
 
 async def _delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -399,13 +324,10 @@ async def _delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.warning(f"_delete_cmd error: {e}")
 
-
 async def _check_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
         member = await context.bot.get_chat_member(GROUP_ID, update.effective_user.id)
-        if member.status not in ("administrator", "creator"):
-            return False
-        return True
+        return member.status in ("administrator", "creator")
     except Exception as e:
         logger.warning(f"_check_admin error: {e}")
         return False
@@ -416,10 +338,9 @@ async def cmd_debut(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         await job_start_session(context)
-        await _delete_cmd(update, context)
     except Exception as e:
-        logger.error(f"cmd_debut error: {e}")
         await _send(context, f"❌ Nisy olana: {e}")
+    finally:
         await _delete_cmd(update, context)
 
 async def cmd_fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -427,10 +348,9 @@ async def cmd_fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         await job_end_session(context)
-        await _delete_cmd(update, context)
     except Exception as e:
-        logger.error(f"cmd_fin error: {e}")
         await _send(context, f"❌ Nisy olana: {e}")
+    finally:
         await _delete_cmd(update, context)
 
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -441,162 +361,10 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["session"] = {}
         save_data(data)
         await _send(context, "✅ Voasasa ny session.")
-        await _delete_cmd(update, context)
     except Exception as e:
-        logger.error(f"cmd_reset error: {e}")
         await _send(context, f"❌ Nisy olana: {e}")
+    finally:
         await _delete_cmd(update, context)
-
-async def cmd_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin : /ok — réinitialise le signalement live coupé."""
-    if not await _check_admin(update, context):
-        return
-    try:
-        data    = load_data()
-        session = get_session(data)
-
-        alert_id = session.get("alert_message_id")
-        if alert_id:
-            try:
-                await context.bot.delete_message(chat_id=GROUP_ID, message_id=alert_id)
-            except Exception:
-                pass
-
-        session["alert_message_id"] = None
-        session["alert_reporters"]  = {}
-        save_data(data)
-
-        await _delete_cmd(update, context)
-        logger.info("Signalement live réinitialisé par admin.")
-    except Exception as e:
-        logger.error(f"cmd_ok error: {e}")
-        await _send(context, f"❌ Nisy olana: {e}")
-        await _delete_cmd(update, context)
-
-
-# ─── Callback bouton live coupé ───────────────────────────────────────────────
-
-async def callback_live_coupe(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user    = query.from_user
-    user_id = str(user.id)
-    name    = user.full_name or user.username or f"User{user.id}"
-
-    data    = load_data()
-    session = get_session(data)
-
-    if not session["active"]:
-        return
-
-    reporters = session.get("alert_reporters", {})
-    session["alert_reporters"] = reporters
-
-    if user_id in reporters:
-        return
-
-    reporters[user_id] = {"name": name}
-    now      = datetime.now(TIMEZONE)
-    count    = len(reporters)
-    time_str = now.strftime("%Hh%M")
-
-    alert_id = session.get("alert_message_id")
-    if alert_id:
-        try:
-            await context.bot.delete_message(chat_id=GROUP_ID, message_id=alert_id)
-        except Exception:
-            pass
-
-    sent = await context.bot.send_message(
-        chat_id=GROUP_ID,
-        text=build_alert_text(reporters),
-        parse_mode="MarkdownV2",
-    )
-    session["alert_message_id"] = sent.message_id
-    save_data(data)
-
-    if ADMIN_ID:
-        try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(
-                    f"⚠️ *Tapaka ny Livestream\\!*\n"
-                    f"Signalé par *{count}* membre{'s' if count > 1 else ''} — {time_str}"
-                ),
-                parse_mode="MarkdownV2",
-            )
-        except Exception as e:
-            logger.warning(f"Erreur envoi message privé admin: {e}")
-
-    # Appel CallMeBot uniquement pour le premier signalement
-    if count == 1:
-        threading.Thread(target=call_callmebot, daemon=True).start()
-
-    logger.info(f"Live coupé signalé par {name} ({count} signalement(s)) — {time_str}")
-
-
-# ─── Handler messages ─────────────────────────────────────────────────────────
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message or update.edited_message
-    if not message or not message.text:
-        return
-
-    if message.chat.id != GROUP_ID:
-        return
-
-    data    = load_data()
-    session = get_session(data)
-    if not session["active"]:
-        return
-
-    user    = message.from_user
-    user_id = str(user.id)
-    name    = user.full_name or user.username or f"User{user.id}"
-
-    already_sent = user_id in session["participants"]
-    old_sum      = session["participants"][user_id]["sum"] if already_sent else 0
-
-    number = extract_number(message.text, old_sum)
-    if number is None:
-        return
-
-    if number < MIN_COUNT or number > MAX_COUNT:
-        await context.bot.send_message(
-            chat_id=GROUP_ID,
-            text=f"⚠️ Ny isa dia tsy maintsy eo anelanelan'ny *{MIN_COUNT}* sy *{MAX_COUNT}* olona.",
-            parse_mode="Markdown",
-        )
-        return
-
-    session["participants"][user_id] = {
-        "name":  name,
-        "sum":   number,
-    }
-    session["total"] = sum(v["sum"] for v in session["participants"].values())
-    save_data(data)
-
-    total        = session["total"]
-    participants = session["participants"]
-
-    text = f">📊 *Isa amin'izao : {total}*"
-
-    bot = context.bot
-    msg_id = session.get("count_message_id")
-    if msg_id:
-        try:
-            await bot.delete_message(chat_id=GROUP_ID, message_id=msg_id)
-        except Exception:
-            pass
-    sent = await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="MarkdownV2")
-    session["count_message_id"] = sent.message_id
-    save_data(data)
-
-
-async def handle_edited_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await handle_message(update, context)
-
 
 async def cmd_total(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _check_admin(update, context):
@@ -619,7 +387,7 @@ async def cmd_total(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["total"] = new_total
         save_data(data)
 
-        bot = context.bot
+        bot    = context.bot
         msg_id = session.get("count_message_id")
         if msg_id:
             try:
@@ -633,11 +401,61 @@ async def cmd_total(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         session["count_message_id"] = sent.message_id
         save_data(data)
-        await _delete_cmd(update, context)
     except Exception as e:
         await _send(context, f"❌ Nisy olana: {e}")
+    finally:
         await _delete_cmd(update, context)
 
+
+# ─── Handler messages ─────────────────────────────────────────────────────────
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message or update.edited_message
+    if not message or not message.text:
+        return
+    if message.chat.id != GROUP_ID:
+        return
+
+    data    = load_data()
+    session = get_session(data)
+    if not session["active"]:
+        return
+
+    user    = message.from_user
+    user_id = str(user.id)
+    name    = user.full_name or user.username or f"User{user.id}"
+
+    old_sum = session["participants"].get(user_id, {}).get("sum", 0)
+    number  = extract_number(message.text, old_sum)
+    if number is None:
+        return
+
+    if number < MIN_COUNT or number > MAX_COUNT:
+        await context.bot.send_message(
+            chat_id=GROUP_ID,
+            text=f"⚠️ Ny isa dia tsy maintsy eo anelanelan'ny *{MIN_COUNT}* sy *{MAX_COUNT}* olona.",
+            parse_mode="Markdown",
+        )
+        return
+
+    session["participants"][user_id] = {"name": name, "sum": number}
+    session["total"] = sum(v["sum"] for v in session["participants"].values())
+    save_data(data)
+
+    bot    = context.bot
+    msg_id = session.get("count_message_id")
+    if msg_id:
+        try:
+            await bot.delete_message(chat_id=GROUP_ID, message_id=msg_id)
+        except Exception:
+            pass
+    sent = await bot.send_message(
+        chat_id=GROUP_ID,
+        text=f">📊 *Isa amin'izao : {session['total']}*",
+        parse_mode="MarkdownV2",
+    )
+    session["count_message_id"] = sent.message_id
+    save_data(data)
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -648,16 +466,16 @@ def main():
 
     group_filter = filters.Chat(GROUP_ID)
 
-    app.add_handler(CommandHandler("debut",      cmd_debut,     filters=group_filter))
-    app.add_handler(CommandHandler("fin",        cmd_fin,       filters=group_filter))
-    app.add_handler(CommandHandler("reset",      cmd_reset,     filters=group_filter))
-    app.add_handler(CommandHandler("ok",         cmd_ok,        filters=group_filter))
-    app.add_handler(CommandHandler("total",      cmd_total,     filters=group_filter))
+    app.add_handler(CommandHandler("debut", cmd_debut, filters=group_filter))
+    app.add_handler(CommandHandler("fin",   cmd_fin,   filters=group_filter))
+    app.add_handler(CommandHandler("reset", cmd_reset, filters=group_filter))
+    app.add_handler(CommandHandler("total", cmd_total, filters=group_filter))
 
-    app.add_handler(CallbackQueryHandler(callback_live_coupe, pattern="^live_coupe$"))
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter, handle_message))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & group_filter & filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
+    app.add_handler(MessageHandler(
+        (filters.TEXT & ~filters.COMMAND & group_filter) |
+        (filters.UpdateType.EDITED_MESSAGE & group_filter),
+        handle_message,
+    ))
 
     app.job_queue.run_once(job_startup_check, when=5)
     app.job_queue.run_repeating(job_scheduler, interval=60, first=65)
